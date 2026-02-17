@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fondo Césped Interactivo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            cursor: crosshair;
+        }
+
+        #canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            font-size: 12px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        #controls.hidden {
+            padding: 8px;
+        }
+        
+        #controls.hidden #controlsContent {
+            display: none;
+        }
+        
+        #toggleControls {
+            background: rgba(255, 255, 255, 0.15) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        #toggleControls:hover {
+            background: rgba(255, 255, 255, 0.25) !important;
+        }
+
+        #controls label {
+            display: block;
+            margin: 8px 0;
+        }
+
+        #controls select, #controls input[type="range"] {
+            margin-left: 10px;
+            padding: 3px;
+            border-radius: 3px;
+        }
+        
+        #controls button {
+            margin-top: 10px;
+            padding: 6px 12px;
+            border-radius: 5px;
+            border: none;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            cursor: pointer;
+            font-size: 11px;
+            width: 100%;
+        }
+        
+        #controls button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .info {
+            margin-top: 10px;
+            font-size: 11px;
+            opacity: 0.8;
+            line-height: 1.5;
+        }
+        
+        .tooltip {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: white;
+            font-size: 13px;
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+        }
+        
+        .tooltip.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div id="controls">
+        <button id="toggleControls" style="position: absolute; top: 10px; right: 10px; padding: 3px 8px; margin: 0; width: auto; font-size: 14px;">−</button>
+        <div id="controlsContent">
+            <label>
+                Hora:
+                <input type="range" id="hourSlider" min="0" max="23" value="12">
+                <span id="hourDisplay">12:00</span>
+            </label>
+            <label>
+                Clima:
+                <select id="weatherSelect">
+                    <option value="clear">☀️ Despejado</option>
+                    <option value="rain">🌧️ Lluvia</option>
+                    <option value="electric">⚡ Lluvia eléctrica</option>
+                    <option value="windy">💨 Viento fuerte</option>
+                </select>
+            </label>
+            <label>
+                <input type="checkbox" id="autoMode" checked>
+                Modo automático (hora real)
+            </label>
+            <button id="audioToggle">🔇 Activar sonido ambiente</button>
+            <div class="info">
+                🌅 Amanece: 6:00<br>
+                🌇 Atardece: 18:00<br>
+                🌙 Noche: 20:00-5:00<br>
+                🖱️ Mueve el cursor sobre el césped<br>
+                💧 Haz clic para crear ondas
+            </div>
+        </div>
+    </div>
+    
+    <div class="tooltip" id="tooltip">Interactúa con el césped moviendo el mouse o tocando la pantalla</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Configuración
+        let currentHour = new Date().getHours();
+        let currentWeather = 'clear';
+        let targetWeather = 'clear';
+        let weatherTransition = 1;
+        let autoMode = true;
+        let lastRainTime = Date.now();
+        
+        // Arrays para elementos animados
+        let grassBlades = [];
+        let fireflies = [];
+        let dandelionSeeds = [];
+        let raindrops = [];
+        let clouds = [];
+        let insects = [];
+        let particles = [];
+        let lightningFlashes = [];
+        let birds = [];
+        let flowers = [];
+        let ripples = [];
+        let rainbow = null;
+        let heatWaves = [];
+        let frogs = [];
+        
+        // Interactividad
+        let mouseX = canvas.width / 2;
+        let mouseY = canvas.height / 2;
+        let mouseDown = false;
+        let touchActive = false;
+        
+        // Audio
+        let audioEnabled = false;
+        let audioContext = null;
+        let lastAmbientSound = 0;
+        
+        // Resize canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            initGrass();
+            initClouds();
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // Event listeners para interactividad
+        canvas.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+        
+        canvas.addEventListener('mousedown', (e) => {
+            mouseDown = true;
+            createRipple(e.clientX, e.clientY);
+            playRippleSound();
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            mouseDown = false;
+        });
+        
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            touchActive = true;
+            const touch = e.touches[0];
+            mouseX = touch.clientX;
+            mouseY = touch.clientY;
+            createRipple(touch.clientX, touch.clientY);
+            playRippleSound();
+        });
+        
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            mouseX = touch.clientX;
+            mouseY = touch.clientY;
+        });
+        
+        canvas.addEventListener('touchend', () => {
+            touchActive = false;
+        });
+        
+        // Mostrar tooltip
+        setTimeout(() => {
+            document.getElementById('tooltip').classList.add('show');
+            setTimeout(() => {
+                document.getElementById('tooltip').classList.remove('show');
+            }, 4000);
+        }, 1000);
+        
+        // Sistema de audio procedural
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+        
+        function playAmbientSound() {
+            if (!audioEnabled || !audioContext) return;
+            
+            const now = audioContext.currentTime;
+            const timeSinceLastSound = Date.now() - lastAmbientSound;
+            
+            if (timeSinceLastSound < 100) return;
+            lastAmbientSound = Date.now();
+            
+            // Grillos (noche)
+            if ((currentHour >= 20 || currentHour < 6) && Math.random() < 0.08) {
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                
+                osc.frequency.value = 3000 + Math.random() * 2000;
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.015, now + 0.01);
+                gain.gain.linearRampToValueAtTime(0, now + 0.08);
+                
+                osc.connect(gain);
+                gain.connect(audioContext.destination);
+                osc.start(now);
+                osc.stop(now + 0.08);
+            }
+            
+            // Pájaros (día)
+            if (currentHour >= 6 && currentHour < 18 && currentWeather !== 'rain' && Math.random() < 0.015) {
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                
+                const startFreq = 800 + Math.random() * 600;
+                const endFreq = startFreq + (Math.random() - 0.5) * 400;
+                
+                osc.frequency.setValueAtTime(startFreq, now);
+                osc.frequency.linearRampToValueAtTime(endFreq, now + 0.12);
+                
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.025, now + 0.02);
+                gain.gain.linearRampToValueAtTime(0, now + 0.12);
+                
+                osc.connect(gain);
+                gain.connect(audioContext.destination);
+                osc.start(now);
+                osc.stop(now + 0.12);
+            }
+            
+            // Lluvia ambiente
+            if (currentWeather === 'rain' && Math.random() < 0.3) {
+                const bufferSize = audioContext.sampleRate * 0.03;
+                const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+                const data = buffer.getChannelData(0);
+                
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * 0.012;
+                }
+                
+                const source = audioContext.createBufferSource();
+                const filter = audioContext.createBiquadFilter();
+                const gain = audioContext.createGain();
+                
+                filter.type = 'highpass';
+                filter.frequency.value = 800;
+                gain.gain.value = 0.08;
+                
+                source.buffer = buffer;
+                source.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioContext.destination);
+                source.start(now);
+            }
+        }
+        
+        function playThunder() {
+            if (!audioEnabled || !audioContext) return;
+            
+            const now = audioContext.currentTime;
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            const filter = audioContext.createBiquadFilter();
+            
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(100, now);
+            osc.frequency.exponentialRampToValueAtTime(30, now + 0.5);
+            
+            filter.type = 'lowpass';
+            filter.frequency.value = 300;
+            
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioContext.destination);
+            osc.start(now);
+            osc.stop(now + 1.5);
+        }
+        
+        function playRippleSound() {
+            if (!audioEnabled || !audioContext) return;
+            
+            const now = audioContext.currentTime;
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.exponentialRampToValueAtTime(200, now + 0.25);
+            
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.04, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+            
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+            osc.start(now);
+            osc.stop(now + 0.25);
+        }
+        
+        function playFrogSound() {
+            if (!audioEnabled || !audioContext) return;
+            
+            const now = audioContext.currentTime;
+            
+            // Sonido de rana - "croak"
+            const osc1 = audioContext.createOscillator();
+            const osc2 = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            const filter = audioContext.createBiquadFilter();
+            
+            osc1.type = 'sine';
+            osc2.type = 'sine';
+            
+            // Dos frecuencias para simular el "croak"
+            osc1.frequency.setValueAtTime(220, now);
+            osc1.frequency.exponentialRampToValueAtTime(180, now + 0.15);
+            
+            osc2.frequency.setValueAtTime(330, now);
+            osc2.frequency.exponentialRampToValueAtTime(280, now + 0.15);
+            
+            filter.type = 'lowpass';
+            filter.frequency.value = 800;
+            filter.Q.value = 3;
+            
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.08, now + 0.02);
+            gain.gain.linearRampToValueAtTime(0.06, now + 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            
+            osc1.connect(filter);
+            osc2.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioContext.destination);
+            
+            osc1.start(now);
+            osc2.start(now);
+            osc1.stop(now + 0.2);
+            osc2.stop(now + 0.2);
+        }
+        
+        function drawFrogs(time) {
+            const isDay = currentHour >= 6 && currentHour < 20;
+            if (currentWeather !== 'clear' || !isDay) {
+                frogs = [];
+                return;
+            }
+            
+            // Crear ranas ocasionalmente (no muy frecuente)
+            if (frogs.length < 2 && Math.random() < 0.003) {
+                frogs.push({
+                    x: -60,
+                    y: canvas.height - 80 - Math.random() * 40,
+                    speed: 1.5 + Math.random() * 1,
+                    jumpPhase: 0,
+                    isJumping: false,
+                    jumpHeight: 0,
+                    size: 15 + Math.random() * 8,
+                    color: Math.random() < 0.5 ? '#7CB342' : '#66BB6A',
+                    croaked: false
+                });
+            }
+            
+            frogs.forEach((frog, index) => {
+                // Saltar ocasionalmente
+                if (!frog.isJumping && Math.random() < 0.02) {
+                    frog.isJumping = true;
+                    frog.jumpPhase = 0;
+                    
+                    // Hacer sonido de rana
+                    if (!frog.croaked) {
+                        playFrogSound();
+                        frog.croaked = true;
+                    }
+                }
+                
+                if (frog.isJumping) {
+                    frog.jumpPhase += 0.08;
+                    frog.jumpHeight = Math.sin(frog.jumpPhase * Math.PI) * 40;
+                    
+                    if (frog.jumpPhase >= 1) {
+                        frog.isJumping = false;
+                        frog.jumpHeight = 0;
+                    }
+                }
+                
+                ctx.save();
+                ctx.translate(frog.x, frog.y - frog.jumpHeight);
+                
+                // Cuerpo de la rana
+                ctx.fillStyle = frog.color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, frog.size * 0.8, frog.size * 0.6, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Cabeza
+                ctx.beginPath();
+                ctx.ellipse(frog.size * 0.3, -frog.size * 0.3, frog.size * 0.5, frog.size * 0.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Ojos
+                ctx.fillStyle = '#2E7D32';
+                ctx.beginPath();
+                ctx.arc(frog.size * 0.15, -frog.size * 0.45, frog.size * 0.18, 0, Math.PI * 2);
+                ctx.arc(frog.size * 0.45, -frog.size * 0.45, frog.size * 0.18, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(frog.size * 0.15, -frog.size * 0.45, frog.size * 0.08, 0, Math.PI * 2);
+                ctx.arc(frog.size * 0.45, -frog.size * 0.45, frog.size * 0.08, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Patas (si no está saltando)
+                if (!frog.isJumping) {
+                    ctx.fillStyle = frog.color;
+                    ctx.beginPath();
+                    ctx.ellipse(-frog.size * 0.6, frog.size * 0.2, frog.size * 0.3, frog.size * 0.15, -0.3, 0, Math.PI * 2);
+                    ctx.ellipse(frog.size * 0.6, frog.size * 0.2, frog.size * 0.3, frog.size * 0.15, 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // Patas extendidas al saltar
+                    ctx.strokeStyle = frog.color;
+                    ctx.lineWidth = frog.size * 0.15;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(-frog.size * 0.4, frog.size * 0.2);
+                    ctx.lineTo(-frog.size * 0.9, frog.size * 0.5);
+                    ctx.moveTo(frog.size * 0.4, frog.size * 0.2);
+                    ctx.lineTo(frog.size * 0.9, frog.size * 0.5);
+                    ctx.stroke();
+                }
+                
+                ctx.restore();
+                
+                frog.x += frog.speed;
+                
+                if (frog.x > canvas.width + 100) {
+                    frogs.splice(index, 1);
+                }
+            });
+        }
+        
+        // Crear ondas
+        function createRipple(x, y) {
+            ripples.push({
+                x: x,
+                y: y,
+                radius: 0,
+                maxRadius: 150,
+                alpha: 1
+            });
+        }
+        
+        // Inicializar césped
+        function initGrass() {
+            grassBlades = [];
+            flowers = [];
+            const bladeCount = Math.floor(canvas.width / 1.8); // Más densidad
+            
+            for (let i = 0; i < bladeCount; i++) {
+                const isBent = Math.random() < 0.25; // Más briznas dobladas
+                const x = (i * canvas.width) / bladeCount + (Math.random() - 0.5) * 8;
+                
+                // Distribución irregular de alturas
+                const heightVariation = Math.random();
+                let height;
+                if (heightVariation < 0.3) {
+                    height = 250 + Math.random() * 150; // Briznas altas
+                } else if (heightVariation < 0.7) {
+                    height = 180 + Math.random() * 120; // Briznas medianas
+                } else {
+                    height = 120 + Math.random() * 100; // Briznas cortas
+                }
+                
+                grassBlades.push({
+                    x: x,
+                    height: height,
+                    width: 3 + Math.random() * 6, // Más anchas
+                    sway: Math.random() * Math.PI * 2,
+                    swaySpeed: 0.01 + Math.random() * 0.02,
+                    swayAmount: 15 + Math.random() * 35,
+                    bent: isBent,
+                    bentAngle: isBent ? 0.4 + Math.random() * 0.8 : 0,
+                    colorVariation: Math.random() * 40 - 20,
+                    thickness: 0.3 + Math.random() * 0.7,
+                    mouseInfluence: 0,
+                    curvature: 0.3 + Math.random() * 0.7, // Curvatura natural
+                    windBias: (Math.random() - 0.5) * 0.3 // Dirección natural del viento
+                });
+                
+                // Flores silvestres
+                if (Math.random() < 0.015) {
+                    const types = ['daisy', 'poppy', 'wildflower'];
+                    const colors = ['#FFE5B4', '#FF6B9D', '#C8A2FF', '#FFD93D', '#FFFFFF'];
+                    
+                    flowers.push({
+                        x: x,
+                        y: canvas.height - 140 - Math.random() * 80,
+                        type: types[Math.floor(Math.random() * types.length)],
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        size: 4 + Math.random() * 7,
+                        sway: Math.random() * Math.PI * 2,
+                        swaySpeed: 0.008 + Math.random() * 0.015,
+                        petalCount: 5 + Math.floor(Math.random() * 4)
+                    });
+                }
+            }
+        }
+        
+        // Inicializar nubes
+        function initClouds() {
+            clouds = [];
+            for (let i = 0; i < 5; i++) {
+                clouds.push({
+                    x: Math.random() * canvas.width,
+                    y: 50 + Math.random() * 150,
+                    width: 80 + Math.random() * 120,
+                    height: 40 + Math.random() * 40,
+                    speed: 0.2 + Math.random() * 0.3,
+                    opacity: 0.3 + Math.random() * 0.4
+                });
+            }
+        }
+        
+        function getSkyColors(hour) {
+            // Transición suave entre climas
+            let baseColors;
+            
+            if (targetWeather === 'electric') {
+                // Lluvia eléctrica - mucho más oscuro y tormentoso
+                baseColors = {
+                    top: [15, 15, 30],
+                    bottom: [35, 30, 50],
+                    ambient: 0.3
+                };
+            } else if (targetWeather === 'rain') {
+                baseColors = {
+                    top: [60, 65, 75],
+                    bottom: [90, 95, 110],
+                    ambient: 0.5
+                };
+            } else if (hour >= 5 && hour < 7) {
+                const t = (hour - 5) / 2;
+                baseColors = {
+                    top: interpolateColor([25, 25, 60], [135, 206, 235], t),
+                    bottom: interpolateColor([255, 140, 100], [255, 200, 150], t),
+                    ambient: 0.6 + t * 0.4
+                };
+            } else if (hour >= 7 && hour < 17) {
+                baseColors = {
+                    top: [135, 206, 235],
+                    bottom: [200, 230, 255],
+                    ambient: 1
+                };
+            } else if (hour >= 17 && hour < 20) {
+                const t = (hour - 17) / 3;
+                baseColors = {
+                    top: interpolateColor([135, 206, 235], [50, 30, 80], t),
+                    bottom: interpolateColor([255, 150, 100], [100, 50, 100], t),
+                    ambient: 1 - t * 0.3
+                };
+            } else {
+                baseColors = {
+                    top: [15, 15, 40],
+                    bottom: [50, 30, 80],
+                    ambient: 0.3
+                };
+            }
+            
+            // Mezclar con colores anteriores para transición suave
+            if (weatherTransition < 1 && currentWeather !== targetWeather) {
+                weatherTransition = Math.min(1, weatherTransition + 0.01);
+            }
+            
+            return baseColors;
+        }
+        
+        function interpolateColor(color1, color2, t) {
+            return [
+                Math.round(color1[0] + (color2[0] - color1[0]) * t),
+                Math.round(color1[1] + (color2[1] - color1[1]) * t),
+                Math.round(color1[2] + (color2[2] - color1[2]) * t)
+            ];
+        }
+        
+        function drawSky() {
+            const colors = getSkyColors(currentHour);
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, `rgb(${colors.top.join(',')})`);
+            gradient.addColorStop(0.6, `rgb(${colors.bottom.join(',')})`);
+            
+            const groundColor = colors.ambient > 0.7 ? [60, 100, 60] : [30, 50, 40];
+            gradient.addColorStop(1, `rgb(${groundColor.join(',')})`);
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        function drawSunRays() {
+            if (currentHour < 6 || currentHour >= 18 || currentWeather === 'rain') return;
+            
+            const dayProgress = (currentHour - 6) / 14;
+            const sunX = canvas.width * 0.1 + (canvas.width * 0.8) * dayProgress;
+            const sunY = canvas.height * 0.15 + Math.sin(dayProgress * Math.PI) * -canvas.height * 0.15;
+            
+            let rayOpacity = 0.08;
+            if (currentHour >= 6 && currentHour < 8) rayOpacity = 0.15;
+            else if (currentHour >= 17 && currentHour < 19) rayOpacity = 0.12;
+            
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2 + Math.sin(Date.now() * 0.0001) * 0.1;
+                const rayLength = canvas.height * 0.8;
+                
+                const gradient = ctx.createLinearGradient(
+                    sunX, sunY,
+                    sunX + Math.cos(angle) * rayLength,
+                    sunY + Math.sin(angle) * rayLength
+                );
+                
+                gradient.addColorStop(0, `rgba(255, 250, 200, ${rayOpacity})`);
+                gradient.addColorStop(0.3, `rgba(255, 245, 180, ${rayOpacity * 0.5})`);
+                gradient.addColorStop(1, 'rgba(255, 250, 200, 0)');
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(sunX, sunY);
+                ctx.arc(sunX, sunY, rayLength, angle - 0.15, angle + 0.15);
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            ctx.restore();
+        }
+        
+        function drawStars() {
+            if (currentHour >= 20 || currentHour < 6) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                for (let i = 0; i < 100; i++) {
+                    const x = (i * 137.5) % canvas.width;
+                    const y = (i * 97.3) % (canvas.height * 0.5);
+                    const size = Math.sin(i) > 0.5 ? 2 : 1;
+                    const twinkle = Math.sin(Date.now() * 0.001 + i) * 0.3 + 0.7;
+                    
+                    ctx.globalAlpha = twinkle;
+                    ctx.fillRect(x, y, size, size);
+                }
+                ctx.globalAlpha = 1;
+            }
+        }
+        
+        function drawCelestialBody() {
+            const isNight = currentHour >= 20 || currentHour < 6;
+            
+            if (isNight && currentWeather !== 'rain') {
+                let nightProgress = currentHour >= 20 ? (currentHour - 20) / 10 : (4 + currentHour) / 10;
+                const x = canvas.width * 0.1 + (canvas.width * 0.8) * nightProgress;
+                const y = canvas.height * 0.15 + Math.sin(nightProgress * Math.PI) * -canvas.height * 0.1;
+                
+                // Luna
+                const moonGlow = ctx.createRadialGradient(x, y, 30, x, y, 70);
+                moonGlow.addColorStop(0, 'rgba(240, 240, 255, 0.3)');
+                moonGlow.addColorStop(1, 'rgba(240, 240, 255, 0)');
+                ctx.fillStyle = moonGlow;
+                ctx.beginPath();
+                ctx.arc(x, y, 70, 0, Math.PI * 2);
+                ctx.fill();
+                
+                const moonGradient = ctx.createRadialGradient(x - 10, y - 10, 5, x, y, 40);
+                moonGradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+                moonGradient.addColorStop(0.6, 'rgba(240, 240, 255, 0.95)');
+                moonGradient.addColorStop(1, 'rgba(200, 200, 230, 0.9)');
+                
+                ctx.fillStyle = moonGradient;
+                ctx.beginPath();
+                ctx.arc(x, y, 40, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Cráteres
+                const craters = [
+                    {x: x - 12, y: y - 8, r: 9, opacity: 0.25},
+                    {x: x + 8, y: y + 12, r: 7, opacity: 0.2},
+                    {x: x - 5, y: y + 18, r: 5, opacity: 0.3}
+                ];
+                
+                craters.forEach(crater => {
+                    const craterGradient = ctx.createRadialGradient(crater.x, crater.y, 0, crater.x, crater.y, crater.r);
+                    craterGradient.addColorStop(0, `rgba(180, 180, 210, ${crater.opacity})`);
+                    craterGradient.addColorStop(1, `rgba(200, 200, 220, 0)`);
+                    ctx.fillStyle = craterGradient;
+                    ctx.beginPath();
+                    ctx.arc(crater.x, crater.y, crater.r, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                
+            } else if (currentHour >= 6 && currentHour < 20 && currentWeather !== 'rain') {
+                // Sol
+                const dayProgress = (currentHour - 6) / 14;
+                const x = canvas.width * 0.1 + (canvas.width * 0.8) * dayProgress;
+                const y = canvas.height * 0.15 + Math.sin(dayProgress * Math.PI) * -canvas.height * 0.15;
+                
+                const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, 120);
+                outerGlow.addColorStop(0, 'rgba(255, 250, 200, 0.3)');
+                outerGlow.addColorStop(0.4, 'rgba(255, 240, 180, 0.15)');
+                outerGlow.addColorStop(1, 'rgba(255, 250, 200, 0)');
+                ctx.fillStyle = outerGlow;
+                ctx.beginPath();
+                ctx.arc(x, y, 120, 0, Math.PI * 2);
+                ctx.fill();
+                
+                const sunGradient = ctx.createRadialGradient(x - 8, y - 8, 0, x, y, 35);
+                sunGradient.addColorStop(0, '#FFF4D6');
+                sunGradient.addColorStop(0.4, '#FFE082');
+                sunGradient.addColorStop(0.7, '#FDB813');
+                sunGradient.addColorStop(1, '#F89406');
+                
+                ctx.fillStyle = sunGradient;
+                ctx.beginPath();
+                ctx.arc(x, y, 35, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        function drawRainbow() {
+            if (!rainbow) return;
+            
+            rainbow.opacity -= 0.003;
+            if (rainbow.opacity <= 0) {
+                rainbow = null;
+                return;
+            }
+            
+            const centerX = canvas.width * 0.5;
+            const centerY = canvas.height * 0.8;
+            const radius = canvas.width * 0.6;
+            const colors = [
+                'rgba(255, 0, 0,',
+                'rgba(255, 127, 0,',
+                'rgba(255, 255, 0,',
+                'rgba(0, 255, 0,',
+                'rgba(0, 0, 255,',
+                'rgba(75, 0, 130,',
+                'rgba(148, 0, 211,'
+            ];
+            
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            
+            for (let i = 0; i < colors.length; i++) {
+                const r = radius - i * 15;
+                const gradient = ctx.createRadialGradient(centerX, centerY, r - 10, centerX, centerY, r);
+                gradient.addColorStop(0, colors[i] + '0)');
+                gradient.addColorStop(0.5, colors[i] + (rainbow.opacity * 0.4) + ')');
+                gradient.addColorStop(1, colors[i] + '0)');
+                
+                ctx.strokeStyle = gradient;
+                ctx.lineWidth = 12;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, r, Math.PI, 0);
+                ctx.stroke();
+            }
+            
+            ctx.restore();
+        }
+        
+        function drawClouds() {
+            clouds.forEach(cloud => {
+                if (currentWeather === 'rain' || currentWeather === 'electric' || targetWeather === 'rain' || targetWeather === 'electric') {
+                    // Nubes oscuras - más oscuras en modo eléctrico
+                    const isElectric = currentWeather === 'electric' || targetWeather === 'electric';
+                    const darkness = isElectric ? 0.95 : 0.9;
+                    
+                    const shadowGradient = ctx.createRadialGradient(
+                        cloud.x + cloud.width * 0.5, cloud.y + 20, 0,
+                        cloud.x + cloud.width * 0.5, cloud.y + 20, cloud.width * 0.8
+                    );
+                    shadowGradient.addColorStop(0, `rgba(${Math.floor(40 * darkness)}, ${Math.floor(45 * darkness)}, ${Math.floor(55 * darkness)}, 0.95)`);
+                    shadowGradient.addColorStop(0.5, `rgba(${Math.floor(60 * darkness)}, ${Math.floor(65 * darkness)}, ${Math.floor(75 * darkness)}, 0.9)`);
+                    shadowGradient.addColorStop(1, `rgba(${Math.floor(80 * darkness)}, ${Math.floor(85 * darkness)}, ${Math.floor(95 * darkness)}, 0.3)`);
+                    
+                    ctx.fillStyle = shadowGradient;
+                    ctx.beginPath();
+                    ctx.ellipse(cloud.x + cloud.width * 0.5, cloud.y, cloud.width * 0.8, cloud.height * 1.2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = `rgba(${Math.floor(50 * darkness)}, ${Math.floor(55 * darkness)}, ${Math.floor(65 * darkness)}, 0.98)`;
+                    ctx.beginPath();
+                    ctx.arc(cloud.x, cloud.y, cloud.height * 0.6, 0, Math.PI * 2);
+                    ctx.arc(cloud.x + cloud.width * 0.25, cloud.y - 5, cloud.height * 0.7, 0, Math.PI * 2);
+                    ctx.arc(cloud.x + cloud.width * 0.5, cloud.y, cloud.height * 0.65, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // Nubes claras
+                    const cloudGradient = ctx.createRadialGradient(
+                        cloud.x + cloud.width * 0.4, cloud.y - cloud.height * 0.2, 0,
+                        cloud.x + cloud.width * 0.5, cloud.y, cloud.width * 0.6
+                    );
+                    cloudGradient.addColorStop(0, `rgba(255, 255, 255, ${cloud.opacity * 1.2})`);
+                    cloudGradient.addColorStop(0.6, `rgba(255, 255, 255, ${cloud.opacity})`);
+                    cloudGradient.addColorStop(1, `rgba(245, 245, 250, ${cloud.opacity * 0.3})`);
+                    
+                    ctx.fillStyle = cloudGradient;
+                    ctx.beginPath();
+                    ctx.arc(cloud.x, cloud.y, cloud.height * 0.5, 0, Math.PI * 2);
+                    ctx.arc(cloud.x + cloud.width * 0.3, cloud.y, cloud.height * 0.6, 0, Math.PI * 2);
+                    ctx.arc(cloud.x + cloud.width * 0.6, cloud.y, cloud.height * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                cloud.x += cloud.speed * (currentWeather === 'windy' ? 3 : 1) * ((currentWeather === 'rain' || currentWeather === 'electric') ? 0.3 : 1);
+                if (cloud.x > canvas.width + cloud.width) {
+                    cloud.x = -cloud.width;
+                    cloud.y = 50 + Math.random() * 150;
+                }
+            });
+        }
+        
+        function drawAtmosphericParticles(time) {
+            const isMorning = currentHour >= 5 && currentHour < 9;
+            
+            if (particles.length < 50 && Math.random() < 0.1) {
+                particles.push({
+                    x: Math.random() * canvas.width,
+                    y: canvas.height * 0.3 + Math.random() * canvas.height * 0.4,
+                    vx: (Math.random() - 0.5) * 0.5,
+                    vy: -0.1 + Math.random() * 0.2,
+                    size: 1 + Math.random() * 2,
+                    opacity: 0.2 + Math.random() * 0.3,
+                    life: 0,
+                    maxLife: 100 + Math.random() * 100
+                });
+            }
+            
+            particles.forEach((particle, index) => {
+                particle.life++;
+                const lifeRatio = particle.life / particle.maxLife;
+                const currentOpacity = particle.opacity * (1 - lifeRatio);
+                
+                ctx.fillStyle = `rgba(255, 255, 255, ${currentOpacity})`;
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                particle.x += particle.vx + Math.sin(time * 0.001 + particle.y) * 0.2;
+                particle.y += particle.vy;
+                
+                if (particle.life >= particle.maxLife || particle.y < 0 || particle.y > canvas.height) {
+                    particles.splice(index, 1);
+                }
+            });
+            
+            // Neblina matutina
+            if (isMorning && currentWeather !== 'rain') {
+                const mistOpacity = Math.max(0, 0.15 - (currentHour - 5) * 0.03);
+                ctx.fillStyle = `rgba(200, 220, 240, ${mistOpacity})`;
+                ctx.fillRect(0, canvas.height * 0.5, canvas.width, canvas.height * 0.5);
+            }
+            
+            // Bruma de calor al mediodía
+            if (currentHour >= 11 && currentHour < 15 && currentWeather === 'clear') {
+                if (heatWaves.length < 3 && Math.random() < 0.05) {
+                    heatWaves.push({
+                        x: Math.random() * canvas.width,
+                        y: canvas.height * 0.6 + Math.random() * canvas.height * 0.2,
+                        phase: Math.random() * Math.PI * 2,
+                        life: 0
+                    });
+                }
+                
+                heatWaves.forEach((wave, index) => {
+                    wave.life++;
+                    wave.phase += 0.05;
+                    
+                    if (wave.life < 60) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.03;
+                        
+                        for (let i = 0; i < 3; i++) {
+                            const offsetY = Math.sin(wave.phase + i) * 3;
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                            ctx.fillRect(wave.x - 20 + i * 15, wave.y + offsetY, 10, 2);
+                        }
+                        
+                        ctx.restore();
+                    } else {
+                        heatWaves.splice(index, 1);
+                    }
+                });
+            }
+        }
+        
+        function drawRain() {
+            if (currentWeather !== 'rain' && currentWeather !== 'electric') {
+                lightningFlashes = [];
+                return;
+            }
+            
+            // Más lluvia en modo eléctrico
+            const maxDrops = currentWeather === 'electric' ? 400 : 300;
+            const rainChance = currentWeather === 'electric' ? 0.9 : 0.8;
+            
+            if (raindrops.length < maxDrops && Math.random() < rainChance) {
+                raindrops.push({
+                    x: Math.random() * canvas.width,
+                    y: -10,
+                    speed: 18 + Math.random() * 12,
+                    length: 15 + Math.random() * 20,
+                    opacity: 0.4 + Math.random() * 0.4
+                });
+            }
+            
+            raindrops.forEach((drop, index) => {
+                ctx.strokeStyle = `rgba(174, 194, 224, ${drop.opacity})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(drop.x, drop.y);
+                ctx.lineTo(drop.x - 3, drop.y + drop.length);
+                ctx.stroke();
+                
+                drop.y += drop.speed;
+                drop.x -= 3;
+                
+                if (drop.y > canvas.height - 30 && drop.y < canvas.height) {
+                    ctx.fillStyle = `rgba(174, 194, 224, ${drop.opacity * 0.3})`;
+                    ctx.beginPath();
+                    ctx.arc(drop.x, canvas.height - 20, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                if (drop.y > canvas.height) {
+                    raindrops.splice(index, 1);
+                }
+            });
+            
+            ctx.fillStyle = 'rgba(150, 160, 180, 0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height * 0.7);
+            
+            // Relámpagos - mucho más frecuentes en modo eléctrico
+            const lightningChance = currentWeather === 'electric' ? 0.015 : 0.002;
+            
+            if (Math.random() < lightningChance) {
+                const flash = {
+                    x: Math.random() * canvas.width,
+                    branches: [],
+                    opacity: 1,
+                    life: 0
+                };
+                
+                let currentX = flash.x;
+                let currentY = 0;
+                
+                // Más ramas en modo eléctrico
+                const segments = currentWeather === 'electric' ? 12 : 8;
+                
+                for (let i = 0; i < segments; i++) {
+                    const nextX = currentX + (Math.random() - 0.5) * 60;
+                    const nextY = currentY + 40 + Math.random() * 50;
+                    flash.branches.push({x1: currentX, y1: currentY, x2: nextX, y2: nextY});
+                    
+                    // Más probabilidad de ramas secundarias en modo eléctrico
+                    if (Math.random() < (currentWeather === 'electric' ? 0.6 : 0.4)) {
+                        const branchX = nextX + (Math.random() - 0.5) * 100;
+                        const branchY = nextY + 30 + Math.random() * 40;
+                        flash.branches.push({x1: nextX, y1: nextY, x2: branchX, y2: branchY});
+                    }
+                    
+                    currentX = nextX;
+                    currentY = nextY;
+                }
+                
+                lightningFlashes.push(flash);
+                playThunder();
+            }
+            
+            lightningFlashes.forEach((flash, index) => {
+                flash.life++;
+                flash.opacity = Math.max(0, 1 - flash.life * 0.1);
+                
+                if (flash.life < 10) {
+                    // Relámpagos más brillantes en modo eléctrico
+                    const brightness = currentWeather === 'electric' ? 1.5 : 1;
+                    ctx.strokeStyle = `rgba(${Math.floor(200 * brightness)}, ${Math.floor(220 * brightness)}, 255, ${flash.opacity})`;
+                    ctx.lineWidth = currentWeather === 'electric' ? 4 : 3;
+                    ctx.shadowBlur = currentWeather === 'electric' ? 30 : 20;
+                    ctx.shadowColor = `rgba(150, 200, 255, ${0.8 * brightness})`;
+                    
+                    flash.branches.forEach(branch => {
+                        ctx.beginPath();
+                        ctx.moveTo(branch.x1, branch.y1);
+                        ctx.lineTo(branch.x2, branch.y2);
+                        ctx.stroke();
+                    });
+                    
+                    ctx.shadowBlur = 0;
+                    
+                    const flashIntensity = currentWeather === 'electric' ? 0.25 : 0.15;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${flash.opacity * flashIntensity})`;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height * 0.5);
+                }
+                
+                if (flash.life > 10) {
+                    lightningFlashes.splice(index, 1);
+                }
+            });
+        }
+        
+        function drawBirds(time) {
+            const isDay = currentHour >= 6 && currentHour < 19;
+            if (!isDay || currentWeather === 'rain') {
+                birds = [];
+                return;
+            }
+            
+            if (birds.length < 5 && Math.random() < 0.008) {
+                birds.push({
+                    x: -50,
+                    y: 80 + Math.random() * 150,
+                    speed: 2 + Math.random() * 2,
+                    wingPhase: Math.random() * Math.PI * 2,
+                    size: 8 + Math.random() * 6,
+                    flyPattern: Math.random() * Math.PI * 2
+                });
+            }
+            
+            birds.forEach((bird, index) => {
+                bird.wingPhase += 0.2;
+                bird.flyPattern += 0.01;
+                const wingAngle = Math.sin(bird.wingPhase) * 0.6;
+                const bobbing = Math.sin(bird.flyPattern) * 5;
+                
+                ctx.save();
+                ctx.translate(bird.x, bird.y + bobbing);
+                
+                // Cuerpo
+                ctx.fillStyle = 'rgba(40, 40, 40, 0.8)';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, bird.size * 0.6, bird.size * 0.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Alas
+                ctx.strokeStyle = 'rgba(40, 40, 40, 0.7)';
+                ctx.lineWidth = 2;
+                
+                // Ala izquierda
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(
+                    -bird.size * 0.8, -bird.size * Math.abs(wingAngle),
+                    -bird.size * 1.2, -bird.size * 0.3 - bird.size * Math.abs(wingAngle) * 0.5
+                );
+                ctx.stroke();
+                
+                // Ala derecha
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(
+                    bird.size * 0.8, -bird.size * Math.abs(wingAngle),
+                    bird.size * 1.2, -bird.size * 0.3 - bird.size * Math.abs(wingAngle) * 0.5
+                );
+                ctx.stroke();
+                
+                ctx.restore();
+                
+                bird.x += bird.speed;
+                
+                if (bird.x > canvas.width + 100) {
+                    birds.splice(index, 1);
+                }
+            });
+        }
+        
+        function drawInsects(time) {
+            const isDay = currentHour >= 8 && currentHour < 18;
+            if (!isDay || currentWeather === 'rain') {
+                insects = [];
+                return;
+            }
+            
+            // Huir del mouse
+            insects.forEach(insect => {
+                const dx = mouseX - insect.x;
+                const dy = mouseY - insect.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < 100) {
+                    insect.vx -= dx / distance * 0.5;
+                    insect.vy -= dy / distance * 0.5;
+                }
+            });
+            
+            if (insects.length < 8 && Math.random() < 0.02) {
+                const type = Math.random() < 0.6 ? 'butterfly' : 'bee';
+                insects.push({
+                    type: type,
+                    x: Math.random() * canvas.width,
+                    y: canvas.height * 0.3 + Math.random() * canvas.height * 0.4,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: (Math.random() - 0.5) * 2,
+                    wingPhase: Math.random() * Math.PI * 2,
+                    size: type === 'butterfly' ? 8 : 5,
+                    color: type === 'butterfly' 
+                        ? `hsl(${Math.random() * 60 + 20}, 70%, 50%)` 
+                        : '#FFD700'
+                });
+            }
+            
+            insects.forEach((insect, index) => {
+                insect.wingPhase += 0.3;
+                const wingScale = Math.abs(Math.sin(insect.wingPhase));
+                
+                if (insect.type === 'butterfly') {
+                    ctx.save();
+                    ctx.translate(insect.x, insect.y);
+                    
+                    ctx.fillStyle = '#2C1810';
+                    ctx.fillRect(-1, -insect.size * 0.3, 2, insect.size * 0.6);
+                    
+                    ctx.fillStyle = insect.color;
+                    ctx.globalAlpha = 0.7;
+                    
+                    ctx.beginPath();
+                    ctx.ellipse(-insect.size * 0.3, 0, insect.size * wingScale, insect.size * 0.8, -0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.ellipse(insect.size * 0.3, 0, insect.size * wingScale, insect.size * 0.8, 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.globalAlpha = 1;
+                    ctx.restore();
+                } else {
+                    ctx.save();
+                    ctx.translate(insect.x, insect.y);
+                    
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, insect.size * 0.6, insect.size * 0.4, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = '#000000';
+                    ctx.lineWidth = 1;
+                    for (let i = -1; i <= 1; i++) {
+                        ctx.beginPath();
+                        ctx.moveTo(i * 2, -insect.size * 0.4);
+                        ctx.lineTo(i * 2, insect.size * 0.4);
+                        ctx.stroke();
+                    }
+                    
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                    ctx.beginPath();
+                    ctx.ellipse(-insect.size * 0.3, -insect.size * 0.2, insect.size * 0.4 * wingScale, insect.size * 0.3, -0.5, 0, Math.PI * 2);
+                    ctx.ellipse(insect.size * 0.3, -insect.size * 0.2, insect.size * 0.4 * wingScale, insect.size * 0.3, 0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                }
+                
+                insect.x += insect.vx;
+                insect.y += insect.vy + Math.sin(time * 0.005 + index) * 0.5;
+                
+                if (Math.random() < 0.02) {
+                    insect.vx = (Math.random() - 0.5) * 2;
+                    insect.vy = (Math.random() - 0.5) * 2;
+                }
+                
+                if (insect.x < -20 || insect.x > canvas.width + 20 || 
+                    insect.y < canvas.height * 0.2 || insect.y > canvas.height) {
+                    insects.splice(index, 1);
+                }
+            });
+        }
+        
+        function drawFlowers() {
+            flowers.forEach(flower => {
+                flower.sway += flower.swaySpeed;
+                const swayOffset = Math.sin(flower.sway) * 8;
+                
+                ctx.save();
+                ctx.translate(flower.x + swayOffset, flower.y);
+                
+                // Tallo
+                ctx.strokeStyle = 'rgba(80, 120, 60, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(swayOffset * 0.5, -20, swayOffset, -40);
+                ctx.stroke();
+                
+                ctx.translate(swayOffset, -40);
+                
+                // Pétalos
+                for (let i = 0; i < flower.petalCount; i++) {
+                    const angle = (i / flower.petalCount) * Math.PI * 2;
+                    ctx.save();
+                    ctx.rotate(angle);
+                    
+                    ctx.fillStyle = flower.color;
+                    ctx.beginPath();
+                    ctx.ellipse(flower.size * 0.6, 0, flower.size * 0.5, flower.size * 0.3, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                }
+                
+                // Centro
+                ctx.fillStyle = '#FFD93D';
+                ctx.beginPath();
+                ctx.arc(0, 0, flower.size * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+            });
+        }
+        
+        function drawRipples() {
+            ripples.forEach((ripple, index) => {
+                ripple.radius += 3;
+                ripple.alpha -= 0.02;
+                
+                if (ripple.alpha > 0) {
+                    ctx.strokeStyle = `rgba(100, 150, 200, ${ripple.alpha})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(ripple.x, ripple.y, ripple.radius, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    ctx.strokeStyle = `rgba(100, 150, 200, ${ripple.alpha * 0.5})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(ripple.x, ripple.y, ripple.radius + 10, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else {
+                    ripples.splice(index, 1);
+                }
+            });
+        }
+        
+        function drawGrass(time) {
+            const colors = getSkyColors(currentHour);
+            const baseAmbient = colors.ambient;
+            const grassBase = baseAmbient > 0.7 ? [80, 160, 80] : [40, 100, 60];
+            
+            const dayProgress = Math.max(0, Math.min(1, (currentHour - 6) / 14));
+            const sunX = canvas.width * 0.1 + (canvas.width * 0.8) * dayProgress;
+            const isMorning = currentHour >= 5 && currentHour < 9;
+            
+            // Dirección del viento global
+            const windDirection = currentWeather === 'windy' ? 1.5 : 0.8;
+            const windTime = time * 0.001;
+            
+            grassBlades.forEach((blade, index) => {
+                blade.sway += blade.swaySpeed * (currentWeather === 'windy' ? 2.5 : 1);
+                
+                // Calcular movimiento del viento con curvatura natural
+                let windSway = Math.sin(blade.sway) * blade.swayAmount;
+                windSway *= (currentWeather === 'windy' ? 2 : 1);
+                
+                // Añadir sesgo de viento natural
+                const windOffset = windSway + (blade.windBias * 20 * windDirection);
+                
+                // Interacción con el mouse
+                const dx = mouseX - blade.x;
+                const dy = mouseY - (canvas.height - blade.height / 2);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                let mouseEffect = 0;
+                if (distance < 150) {
+                    const force = (150 - distance) / 150;
+                    blade.mouseInfluence = Math.min(1, blade.mouseInfluence + 0.12);
+                    const angle = Math.atan2(dy, dx);
+                    mouseEffect = -Math.cos(angle) * force * 60 * blade.mouseInfluence;
+                } else {
+                    blade.mouseInfluence = Math.max(0, blade.mouseInfluence - 0.06);
+                }
+                
+                const totalOffset = windOffset + mouseEffect;
+                const finalSwayOffset = blade.bent ? totalOffset * (1 + blade.bentAngle) : totalOffset;
+                
+                // Variación de color
+                const adjustedBase = grassBase.map((c, i) => {
+                    if (i === 1) return Math.max(0, Math.min(255, c + blade.colorVariation));
+                    return c;
+                });
+                
+                // Iluminación dinámica
+                const distanceFromSun = Math.abs(blade.x - sunX) / canvas.width;
+                const lightingFactor = 1 + (1 - distanceFromSun) * 0.35 * baseAmbient;
+                const litBase = adjustedBase.map(c => Math.floor(c * lightingFactor));
+                
+                // Crear gradiente más complejo para textura realista
+                const tipX = blade.x + finalSwayOffset * blade.curvature;
+                const tipY = canvas.height - blade.height;
+                
+                const gradient = ctx.createLinearGradient(
+                    blade.x, canvas.height,
+                    tipX, tipY
+                );
+                
+                const darkGrass = litBase.map(c => Math.floor(c * 0.5));
+                const midDarkGrass = litBase.map(c => Math.floor(c * 0.75));
+                const midGrass = litBase.map(c => Math.floor(c * 0.95));
+                const lightGrass = litBase.map(c => Math.floor(c * 1.2));
+                const tipGrass = litBase.map((c, i) => {
+                    if (i === 1) return Math.min(255, Math.floor(c * 1.4)); // Verde brillante en la punta
+                    return Math.floor(c * 1.15);
+                });
+                
+                gradient.addColorStop(0, `rgb(${darkGrass.join(',')})`);
+                gradient.addColorStop(0.25, `rgb(${midDarkGrass.join(',')})`);
+                gradient.addColorStop(0.5, `rgb(${midGrass.join(',')})`);
+                gradient.addColorStop(0.75, `rgb(${litBase.join(',')})`);
+                gradient.addColorStop(0.92, `rgb(${lightGrass.join(',')})`);
+                gradient.addColorStop(1, `rgb(${tipGrass.join(',')})`);
+                
+                ctx.fillStyle = gradient;
+                
+                // Dibujar forma de lanza/espada que termina en punta
+                ctx.beginPath();
+                
+                // Base de la brizna (más ancha)
+                const baseWidth = blade.width * blade.thickness;
+                ctx.moveTo(blade.x - baseWidth / 2, canvas.height);
+                ctx.lineTo(blade.x + baseWidth / 2, canvas.height);
+                
+                // Puntos de control para crear curvatura suave hacia el viento
+                const h1 = canvas.height - blade.height * 0.25;
+                const h2 = canvas.height - blade.height * 0.5;
+                const h3 = canvas.height - blade.height * 0.75;
+                const h4 = canvas.height - blade.height * 0.95;
+                
+                const offset1 = finalSwayOffset * 0.15;
+                const offset2 = finalSwayOffset * 0.4;
+                const offset3 = finalSwayOffset * 0.7;
+                const offset4 = finalSwayOffset * 0.95;
+                
+                // Ancho que se reduce gradualmente
+                const width1 = baseWidth * 0.9;
+                const width2 = baseWidth * 0.75;
+                const width3 = baseWidth * 0.5;
+                const width4 = baseWidth * 0.25;
+                
+                // Lado derecho de la brizna (con curvatura)
+                ctx.bezierCurveTo(
+                    blade.x + width1 / 2 + offset1, h1,
+                    blade.x + width2 / 2 + offset2, h2,
+                    blade.x + width3 / 2 + offset3, h3
+                );
+                
+                ctx.bezierCurveTo(
+                    blade.x + width4 / 2 + offset4, h4,
+                    blade.x + offset4, tipY + 5,
+                    blade.x + finalSwayOffset * blade.curvature, tipY // Punta afilada
+                );
+                
+                // Lado izquierdo de la brizna (con curvatura)
+                ctx.bezierCurveTo(
+                    blade.x + offset4, tipY + 5,
+                    blade.x - width4 / 2 + offset4, h4,
+                    blade.x - width3 / 2 + offset3, h3
+                );
+                
+                ctx.bezierCurveTo(
+                    blade.x - width2 / 2 + offset2, h2,
+                    blade.x - width1 / 2 + offset1, h1,
+                    blade.x - baseWidth / 2, canvas.height
+                );
+                
+                ctx.closePath();
+                ctx.fill();
+                
+                // Nervadura central con mayor detalle
+                if (blade.width > 3.5) {
+                    const nerveGradient = ctx.createLinearGradient(
+                        blade.x, canvas.height,
+                        blade.x + finalSwayOffset * blade.curvature, tipY
+                    );
+                    nerveGradient.addColorStop(0, `rgba(${darkGrass.join(',')}, 0.6)`);
+                    nerveGradient.addColorStop(0.5, `rgba(${darkGrass.join(',')}, 0.4)`);
+                    nerveGradient.addColorStop(1, `rgba(${darkGrass.join(',')}, 0.2)`);
+                    
+                    ctx.strokeStyle = nerveGradient;
+                    ctx.lineWidth = 1.2;
+                    ctx.beginPath();
+                    ctx.moveTo(blade.x, canvas.height);
+                    
+                    ctx.bezierCurveTo(
+                        blade.x + offset1, h1,
+                        blade.x + offset2, h2,
+                        blade.x + offset3, h3
+                    );
+                    
+                    ctx.bezierCurveTo(
+                        blade.x + offset4, h4,
+                        blade.x + finalSwayOffset * blade.curvature, tipY + 3,
+                        blade.x + finalSwayOffset * blade.curvature, tipY
+                    );
+                    ctx.stroke();
+                }
+                
+                // Sombra sutil en un lado
+                if (blade.width > 4) {
+                    ctx.fillStyle = `rgba(0, 0, 0, 0.08)`;
+                    ctx.beginPath();
+                    ctx.moveTo(blade.x - baseWidth / 2, canvas.height);
+                    ctx.bezierCurveTo(
+                        blade.x - width1 / 2 + offset1, h1,
+                        blade.x - width2 / 2 + offset2, h2,
+                        blade.x - width3 / 2 + offset3, h3
+                    );
+                    ctx.bezierCurveTo(
+                        blade.x - width4 / 2 + offset4, h4,
+                        blade.x + finalSwayOffset * blade.curvature - 1, tipY + 3,
+                        blade.x + finalSwayOffset * blade.curvature, tipY
+                    );
+                    ctx.lineTo(blade.x + finalSwayOffset * blade.curvature, tipY);
+                    ctx.bezierCurveTo(
+                        blade.x + offset4, h4,
+                        blade.x + offset3, h3,
+                        blade.x + offset2, h2
+                    );
+                    ctx.bezierCurveTo(
+                        blade.x + offset1, h1,
+                        blade.x, canvas.height - blade.height * 0.1,
+                        blade.x, canvas.height
+                    );
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                
+                // Gotas de rocío matutinas
+                if (isMorning && currentWeather !== 'rain' && Math.random() < 0.04) {
+                    const dewHeight = 0.3 + Math.random() * 0.5;
+                    const dewY = canvas.height - blade.height * dewHeight;
+                    const dewX = blade.x + (finalSwayOffset * blade.curvature * dewHeight);
+                    
+                    const dewGradient = ctx.createRadialGradient(dewX, dewY, 0, dewX, dewY, 4);
+                    dewGradient.addColorStop(0, 'rgba(200, 220, 255, 0.95)');
+                    dewGradient.addColorStop(0.4, 'rgba(150, 180, 220, 0.7)');
+                    dewGradient.addColorStop(1, 'rgba(150, 180, 220, 0.1)');
+                    
+                    ctx.fillStyle = dewGradient;
+                    ctx.beginPath();
+                    ctx.arc(dewX, dewY, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Reflejo de luz
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    ctx.beginPath();
+                    ctx.arc(dewX - 1, dewY - 1, 1, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            
+            // Suelo con textura
+            const groundGradient = ctx.createLinearGradient(0, canvas.height - 60, 0, canvas.height);
+            const groundBase = grassBase.map(c => Math.floor(c * 0.45));
+            const groundMid = grassBase.map(c => Math.floor(c * 0.6));
+            const groundTop = grassBase.map(c => Math.floor(c * 0.75));
+            
+            groundGradient.addColorStop(0, `rgba(${groundTop.join(',')}, 0.5)`);
+            groundGradient.addColorStop(0.5, `rgba(${groundMid.join(',')}, 0.75)`);
+            groundGradient.addColorStop(1, `rgba(${groundBase.join(',')}, 0.95)`);
+            
+            ctx.fillStyle = groundGradient;
+            ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+            
+            // Textura del suelo
+            ctx.fillStyle = `rgba(${groundBase.map(c => Math.floor(c * 0.7)).join(',')}, 0.4)`;
+            for (let i = 0; i < canvas.width; i += 8) {
+                if (Math.random() < 0.4) {
+                    ctx.fillRect(i, canvas.height - 35 + Math.random() * 30, 2 + Math.random() * 4, 1 + Math.random() * 2);
+                }
+            }
+        }
+        
+        function drawFireflies(time) {
+            const isNight = currentHour >= 20 || currentHour < 6;
+            if (!isNight) {
+                fireflies = [];
+                return;
+            }
+            
+            if (fireflies.length < 15 && Math.random() < 0.05) {
+                fireflies.push({
+                    x: Math.random() * canvas.width,
+                    y: canvas.height * 0.4 + Math.random() * canvas.height * 0.3,
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: (Math.random() - 0.5) * 2,
+                    brightness: 0,
+                    phase: Math.random() * Math.PI * 2,
+                    pulseSpeed: 0.05 + Math.random() * 0.05
+                });
+            }
+            
+            fireflies.forEach((firefly, index) => {
+                firefly.phase += firefly.pulseSpeed;
+                firefly.brightness = Math.sin(firefly.phase) * 0.5 + 0.5;
+                
+                const glow = ctx.createRadialGradient(firefly.x, firefly.y, 0, firefly.x, firefly.y, 15);
+                glow.addColorStop(0, `rgba(255, 255, 150, ${firefly.brightness * 0.8})`);
+                glow.addColorStop(0.3, `rgba(255, 255, 150, ${firefly.brightness * 0.4})`);
+                glow.addColorStop(1, 'rgba(255, 255, 150, 0)');
+                
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(firefly.x, firefly.y, 15, 0, Math.PI * 2);
+                ctx.fill();
+                
+                firefly.x += firefly.vx;
+                firefly.y += firefly.vy;
+                
+                if (Math.random() < 0.02) {
+                    firefly.vx = (Math.random() - 0.5) * 2;
+                    firefly.vy = (Math.random() - 0.5) * 2;
+                }
+                
+                if (firefly.x < 0 || firefly.x > canvas.width || 
+                    firefly.y < canvas.height * 0.3 || firefly.y > canvas.height * 0.9) {
+                    fireflies.splice(index, 1);
+                }
+            });
+        }
+        
+        function drawDandelionSeeds(time) {
+            const isDay = currentHour >= 7 && currentHour < 19;
+            if (!isDay && currentWeather !== 'windy') {
+                dandelionSeeds = [];
+                return;
+            }
+            
+            if (dandelionSeeds.length < 20 && Math.random() < 0.03) {
+                dandelionSeeds.push({
+                    x: -20,
+                    y: canvas.height * 0.4 + Math.random() * canvas.height * 0.3,
+                    vx: 1 + Math.random() * 2,
+                    vy: -1 + Math.random() * 2,
+                    rotation: Math.random() * Math.PI * 2,
+                    rotationSpeed: (Math.random() - 0.5) * 0.1,
+                    size: 8 + Math.random() * 6,
+                    wobble: Math.random() * Math.PI * 2
+                });
+            }
+            
+            dandelionSeeds.forEach((seed, index) => {
+                ctx.save();
+                ctx.translate(seed.x, seed.y);
+                ctx.rotate(seed.rotation);
+                
+                const stemGradient = ctx.createLinearGradient(0, 0, 0, seed.size * 1.5);
+                stemGradient.addColorStop(0, 'rgba(160, 130, 90, 0.8)');
+                stemGradient.addColorStop(0.5, 'rgba(139, 115, 85, 0.7)');
+                stemGradient.addColorStop(1, 'rgba(120, 100, 70, 0.5)');
+                
+                ctx.strokeStyle = stemGradient;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(0, seed.size * 1.5);
+                ctx.stroke();
+                
+                for (let i = 0; i < 12; i++) {
+                    const angle = (i / 12) * Math.PI * 2;
+                    const distance = seed.size * 0.4;
+                    const fluffX = Math.cos(angle) * distance;
+                    const fluffY = Math.sin(angle) * distance;
+                    
+                    ctx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
+                    ctx.lineWidth = 0.5;
+                    ctx.beginPath();
+                    ctx.moveTo(0, seed.size * 0.3);
+                    ctx.lineTo(fluffX, fluffY);
+                    ctx.stroke();
+                    
+                    const fluffGradient = ctx.createRadialGradient(fluffX, fluffY, 0, fluffX, fluffY, seed.size * 0.25);
+                    fluffGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+                    fluffGradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.6)');
+                    fluffGradient.addColorStop(1, 'rgba(245, 245, 245, 0.2)');
+                    
+                    ctx.fillStyle = fluffGradient;
+                    ctx.beginPath();
+                    ctx.arc(fluffX, fluffY, seed.size * 0.25, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                ctx.fillStyle = 'rgba(200, 180, 140, 0.8)';
+                ctx.beginPath();
+                ctx.arc(0, seed.size * 0.3, seed.size * 0.15, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+                
+                seed.wobble += 0.02;
+                seed.x += seed.vx * (currentWeather === 'windy' ? 2 : 1);
+                seed.y += Math.sin(seed.wobble) * 0.8 + seed.vy * 0.3;
+                seed.rotation += seed.rotationSpeed;
+                
+                if (seed.x > canvas.width + 50 || seed.y > canvas.height || seed.y < -50) {
+                    dandelionSeeds.splice(index, 1);
+                }
+            });
+        }
+        
+        // Loop de animación
+        function animate(time) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            drawSky();
+            drawStars();
+            drawSunRays();
+            drawCelestialBody();
+            drawRainbow();
+            drawClouds();
+            drawAtmosphericParticles(time);
+            drawRain();
+            drawBirds(time);
+            drawInsects(time);
+            drawFrogs(time);
+            drawDandelionSeeds(time);
+            drawFlowers();
+            drawGrass(time);
+            drawFireflies(time);
+            drawRipples();
+            
+            // Sonido ambiente
+            if (audioEnabled && time % 100 < 50) {
+                playAmbientSound();
+            }
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // Controles
+        document.getElementById('hourSlider').addEventListener('input', (e) => {
+            currentHour = parseInt(e.target.value);
+            document.getElementById('hourDisplay').textContent = `${currentHour}:00`;
+            autoMode = false;
+            document.getElementById('autoMode').checked = false;
+        });
+        
+        document.getElementById('weatherSelect').addEventListener('change', (e) => {
+            targetWeather = e.target.value;
+            
+            if (targetWeather !== currentWeather) {
+                weatherTransition = 0;
+                
+                // Arcoíris después de la lluvia
+                if (currentWeather === 'rain' && targetWeather === 'clear') {
+                    setTimeout(() => {
+                        if (currentHour >= 7 && currentHour < 18) {
+                            rainbow = { opacity: 1 };
+                        }
+                    }, 2000);
+                }
+                
+                setTimeout(() => {
+                    currentWeather = targetWeather;
+                    lastRainTime = Date.now();
+                }, 1000);
+            }
+        });
+        
+        document.getElementById('autoMode').addEventListener('change', (e) => {
+            autoMode = e.target.checked;
+            if (autoMode) {
+                currentHour = new Date().getHours();
+                document.getElementById('hourSlider').value = currentHour;
+                document.getElementById('hourDisplay').textContent = `${currentHour}:00`;
+            }
+        });
+        
+        document.getElementById('audioToggle').addEventListener('click', function() {
+            audioEnabled = !audioEnabled;
+            
+            if (audioEnabled) {
+                initAudio();
+                this.textContent = '🔊 Sonido activado';
+                this.style.background = 'rgba(100, 200, 100, 0.3)';
+            } else {
+                this.textContent = '🔇 Activar sonido';
+                this.style.background = 'rgba(255, 255, 255, 0.2)';
+            }
+        });
+        
+        document.getElementById('toggleControls').addEventListener('click', function() {
+            const controls = document.getElementById('controls');
+            const isHidden = controls.classList.contains('hidden');
+            
+            if (isHidden) {
+                controls.classList.remove('hidden');
+                this.textContent = '−';
+            } else {
+                controls.classList.add('hidden');
+                this.textContent = '+';
+            }
+        });
+        
+        setInterval(() => {
+            if (autoMode) {
+                currentHour = new Date().getHours();
+                document.getElementById('hourSlider').value = currentHour;
+                document.getElementById('hourDisplay').textContent = `${currentHour}:00`;
+            }
+        }, 60000);
+        
+        animate(0);
+    </script>
+</body>
+</html>
